@@ -203,33 +203,25 @@ export default function DataInput({ datasets, setDatasets, activeDatasetId, setA
                     setDatasets((prev) => prev.map((d) => d.id === ds.id ? { ...d, name: newName } : d));
                   }}
                 />
-                <span className="ds-count">({ds.data.length} time points, {totalReplicates} values)</span>
-                {FACTOR_DEFS.map((factor) => (
-                  <input
-                    key={factor.key}
-                    type="number"
-                    className="ds-name-input"
-                    style={{ maxWidth: 92 }}
-                    title={`${factor.label} (${factor.unit})`}
-                    value={ds.conditions?.[factor.key] ?? factor.defaultValue}
-                    min={factor.min}
-                    max={factor.max}
-                    step={factor.step}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => {
-                      const value = parseFloat(e.target.value);
-                      setDatasets((prev) => prev.map((d) => d.id === ds.id
-                        ? {
-                          ...d,
-                          conditions: {
-                            ...(d.conditions ?? {}),
-                            [factor.key]: Number.isFinite(value) ? value : factor.defaultValue,
-                          },
-                        }
-                        : d));
-                    }}
-                  />
-                ))}
+                <span
+                  className="ds-count"
+                  title={`Time points: ${ds.data.length}, values: ${totalReplicates}`}
+                >
+                  {/* keep inline minimal; tooltip carries detail */}
+                  ·
+                </span>
+                {FACTOR_DEFS.map((factor) => {
+                  const value = ds.conditions?.[factor.key] ?? factor.defaultValue;
+                  return (
+                    <span
+                      key={factor.key}
+                      className="ds-factor"
+                      title={`${factor.label} (${factor.unit})`}
+                    >
+                      {value}{factor.unit}
+                    </span>
+                  );
+                })}
                 <button
                   className="ds-remove"
                   onClick={(e) => { e.stopPropagation(); removeDataset(ds.id); }}

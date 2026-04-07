@@ -3,6 +3,7 @@ import {
   Legend, ResponsiveContainer, ErrorBar,
 } from 'recharts';
 import { MODELS, predictCurve } from '../models/inactivationModels';
+import { formatAxisTick, formatMetric } from '../models/fitter';
 
 // color = group, shape = observed data points, linestyle = model rank by AICc
 const DASH_PATTERNS = [undefined, '6 3', '2 3', '8 3 2 3', '4 2 4 2'];
@@ -141,6 +142,9 @@ export default function ResultChart({
             domain={[0, 'dataMax']}
           />
           <YAxis
+            width={80}
+            minTickGap={24}
+            tickFormatter={formatAxisTick}
             label={{ value: 'log₁₀(N)', angle: -90, position: 'insideLeft', style: { fontSize: 13, fill: '#334155' } }}
             tick={{ fontSize: 12, fill: '#475569' }}
             axisLine={{ stroke: '#64748b' }}
@@ -148,7 +152,7 @@ export default function ResultChart({
           />
           <Tooltip
             contentStyle={{ borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12 }}
-            formatter={(val, name) => [typeof val === 'number' ? val.toFixed(3) : val, name]}
+            formatter={(val, name) => [typeof val === 'number' ? formatMetric(val) : val, name]}
             labelFormatter={(t) => `Time: ${t?.toFixed(2)} min`}
           />
           <Legend

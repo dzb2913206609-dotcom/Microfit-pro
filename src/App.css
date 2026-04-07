@@ -175,7 +175,7 @@ textarea { resize: vertical; font-family: monospace; }
 .dataset-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 7px 10px;
   border-radius: 5px;
   cursor: pointer;
@@ -186,7 +186,7 @@ textarea { resize: vertical; font-family: monospace; }
 .dataset-item:hover { border-color: var(--primary); }
 .dataset-item.active { background: var(--primary-light); border-color: var(--primary); }
 .ds-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.ds-name { flex: 1; font-size: 13px; font-weight: 500; }
+.ds-name { flex: 1; font-size: 13px; font-weight: 500; min-width: 0; }
 .ds-name-input {
   flex: 1;
   font-size: 13px;
@@ -199,7 +199,8 @@ textarea { resize: vertical; font-family: monospace; }
   cursor: text;
 }
 .ds-name-input:hover { text-decoration: underline dotted; }
-.ds-count { font-size: 11px; color: var(--text-light); }
+.ds-count { font-size: 11px; color: var(--text-light); flex-shrink: 0; }
+.ds-factor { font-size: 11px; color: var(--text-light); flex-shrink: 0; }
 .ds-remove {
   background: none;
   border: none;
@@ -208,6 +209,7 @@ textarea { resize: vertical; font-family: monospace; }
   font-size: 16px;
   line-height: 1;
   padding: 0 2px;
+  flex-shrink: 0;
 }
 .ds-remove:hover { color: var(--accent); }
 
@@ -329,7 +331,39 @@ textarea { resize: vertical; font-family: monospace; }
 .result-table .ok { color: var(--warn); }
 .result-table .poor { color: var(--accent); }
 .shape-tag { font-size: 10px; color: var(--text-light); }
-.param-cell { max-width: 300px; word-break: break-word; font-family: monospace; font-size: 11px; }
+.param-cell {
+  max-width: 320px;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.param-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.param-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.param-main {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.param-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-light);
+}
 
 /* ===== FIT STATS DATASET TABS ===== */
 .fit-stats-header {
@@ -410,6 +444,47 @@ textarea { resize: vertical; font-family: monospace; }
 }
 .dv-label { font-size: 11px; color: var(--text-light); }
 .dv-value.compact { font-size: 12px; font-weight: 600; }
+
+.stats-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.residual-meta {
+  font-size: 11px;
+  color: var(--text-light);
+  margin-top: 4px;
+}
+
+.normality-warning {
+  margin-top: 6px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.summary-warning {
+  margin-top: 12px;
+}
+
+.residual-plot-panel {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fafcff;
+}
+
+.residual-plot-panel h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  margin-bottom: 8px;
+}
 
 /* ===== MODEL VISIBILITY PANEL ===== */
 .model-visibility-panel {}

@@ -5,7 +5,12 @@ import {
 } from 'recharts';
 import { MODELS, predictCurve } from '../models/inactivationModels';
 import {
-  FACTOR_DEFS,
+  formatAxisTick,
+  formatMetric,
+  formatPValue,
+  formatParameterValue,
+} from '../models/fitter';
+import {
   MODEL_SECONDARY_CONFIG,
   SECONDARY_MODELS,
   buildSecondaryRows,
@@ -16,6 +21,71 @@ import {
   getSecondaryModelList,
   predictPrimaryParams,
 } from '../models/secondaryModels';
+
+const NORMALITY_WARNING = '注意：残差不符合正态分布，请考虑更换模型或检查离群点。';
+
+function buildResidualChartData(residuals = []) {
+  return residuals.map((residual, index) => ({ index: index + 1, residual }));
+}
+
+function ResidualPlot({ residuals = [], title }) {
+  const chartData = useMemo(() => buildResidualChartData(residuals), [residuals]);
+
+  if (chartData.length === 0) {
+    return <p className="hint">No residual data available.</p>;
+  }
+
+  const values = chartData.map((point) => point.residual);
+  const minResidual = Math.min(...values, 0);
+  const maxResidual = Math.max(...values, 0);
+
+  return (
+    <div className="residual-plot-panel">
+      <h3>{title}</h3>
+      <ResponsiveContainer width="100%" height={280}>
+        <ComposedChart data={chartData} margin={{ top: 10, right: 24, bottom: 12, left: 6 }}>
+          <CartesianGrid strokeDasharray="2 4" stroke="#d9e2f2" vertical={false} />
+          <XAxis
+            dataKey="index"
+            type="number"
+            domain={[1, chartData.length]}
+            allowDecimals={false}
+            label={{ value: 'Sample index', position: 'insideBottom', offset: -4, style: { fontSize: 13, fill: '#334155' } }}
+            tick={{ fontSize: 12, fill: '#475569' }}
+            axisLine={{ stroke: '#64748b' }}
+            tickLine={{ stroke: '#64748b' }}
+          />
+          <YAxis
+            type="number"
+            domain={[minResidual, maxResidual]}
+            width={80}
+            minTickGap={24}
+            tickFormatter={formatAxisTick}
+            label={{ value: 'Residual', angle: -90, position: 'insideLeft', style: { fontSize: 13, fill: '#334155' } }}
+            tick={{ fontSize: 12, fill: '#475569' }}
+            axisLine={{ stroke: '#64748b' }}
+            tickLine={{ stroke: '#64748b' }}
+          />
+          <Tooltip
+            formatter={(value) => formatMetric(Number(value))}
+            labelFormatter={(value) => `Sample ${value}`}
+          />
+          <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+          <Line
+            data={chartData.map((point) => ({ ...point, baseline: 0 }))}
+            dataKey="baseline"
+            name="Zero line"
+            stroke="#94a3b8"
+            strokeDasharray="4 4"
+            dot={false}
+            isAnimationActive={false}
+          />
+          <Scatter data={chartData} dataKey="residual" name="Residuals" fill="#1f3b73" />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
 
 function buildInitialManualParams(modelId) {
   const model = MODELS[modelId];
@@ -38,6 +108,7 @@ export default function SecondaryModel({ datasets, fitResults }) {
   const [bindings, setBindings] = useState({});
   const [manualParams, setManualParams] = useState(() => buildInitialManualParams(primaryModels[0]?.id ?? 'LOG_LINEAR'));
   const [factorValues, setFactorValues] = useState(() => createDefaultFactorState(['temp']));
+  const [showResidualPlot, setShowResidualPlot] = useState(false);
   const currentTemperature = factorValues.temp;
   const selectedRouting = JSON.stringify(bindings);
   const predictorWatcherRef = useRef({ currentTemperature, selectedRouting });
@@ -337,12 +408,15 @@ export default function SecondaryModel({ datasets, fitResults }) {
                     tickLine={{ stroke: '#64748b' }}
                   />
                   <YAxis
+                    width={80}
+                    minTickGap={24}
+                    tickFormatter={formatAxisTick}
                     label={{ value: secondaryModel?.yLabel, angle: -90, position: 'insideLeft', style: { fontSize: 13, fill: '#334155' } }}
                     tick={{ fontSize: 12, fill: '#475569' }}
                     axisLine={{ stroke: '#64748b' }}
                     tickLine={{ stroke: '#64748b' }}
                   />
-                  <Tooltip formatter={(v) => Number(v).toFixed(4)} />
+                  <Tooltip formatter={(v) => formatMetric(Number(v))} />
                   <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
                   <Scatter data={activeFit.rows} dataKey="y" name="Observed" fill="#1f3b73" />
                   <Line data={activeFit.curve} dataKey="y" name="Fitted curve" stroke="#9a3412" strokeWidth={2.4} dot={false} type="monotone" />
@@ -352,19 +426,36 @@ export default function SecondaryModel({ datasets, fitResults }) {
 
             <div className="panel">
               <h2 className="panel-title">Secondary Fit Statistics</h2>
+              <div className="stats-toolbar">
+                <button className="btn-secondary" onClick={() => setShowResidualPlot((prev) => !prev)}>
+                  显示残差图
+                </button>
+                <span className="residual-meta">
+                  Shapiro-Wilk p: {formatPValue(activeFit.normalityPValue)}
+                </span>
+              </div>
+              {Number.isFinite(activeFit.normalityPValue) && activeFit.normalityPValue < 0.05 && (
+                <div className="normality-warning">{NORMALITY_WARNING}</div>
+              )}
+              {showResidualPlot && (
+                <ResidualPlot
+                  residuals={activeFit.residuals}
+                  title={`${SECONDARY_MODELS[activeFit.secondaryModelId]?.name} 残差图`}
+                />
+              )}
               <table className="result-table">
                 <tbody>
                   <tr><th>Primary model</th><td>{MODELS[activeFit.primaryModelId]?.name}</td></tr>
                   <tr><th>Target</th><td>{MODEL_SECONDARY_CONFIG[activeFit.primaryModelId]?.targets?.[activeFit.targetKey]?.label}</td></tr>
                   <tr><th>Secondary model</th><td>{SECONDARY_MODELS[activeFit.secondaryModelId]?.name}</td></tr>
-                  <tr><th>R²</th><td>{activeFit.r2?.toFixed(4)}</td></tr>
-                  <tr><th>Adj. R²</th><td>{activeFit.r2adj?.toFixed(4)}</td></tr>
-                  <tr><th>RMSE</th><td>{activeFit.rmse?.toFixed(4)}</td></tr>
-                  <tr><th>AICc</th><td>{Number.isFinite(activeFit.aicc) ? activeFit.aicc.toFixed(4) : 'NA'}</td></tr>
+                  <tr><th>R²</th><td>{formatMetric(activeFit.r2)}</td></tr>
+                  <tr><th>Adj. R²</th><td>{formatMetric(activeFit.r2adj)}</td></tr>
+                  <tr><th>RMSE</th><td>{formatMetric(activeFit.rmse)}</td></tr>
+                  <tr><th>AICc</th><td>{formatMetric(activeFit.aicc)}</td></tr>
                   {secondaryModel?.params.map((param) => (
                     <tr key={param.name}>
                       <th>{param.label}</th>
-                      <td>{activeFit.params[param.name]?.toFixed(4)}</td>
+                      <td>{formatParameterValue(activeFit.params[param.name])}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -393,12 +484,15 @@ export default function SecondaryModel({ datasets, fitResults }) {
                 tickLine={{ stroke: '#64748b' }}
               />
               <YAxis
+                width={80}
+                minTickGap={24}
+                tickFormatter={formatAxisTick}
                 label={{ value: 'log₁₀(N)', angle: -90, position: 'insideLeft', style: { fontSize: 13, fill: '#334155' } }}
                 tick={{ fontSize: 12, fill: '#475569' }}
                 axisLine={{ stroke: '#64748b' }}
                 tickLine={{ stroke: '#64748b' }}
               />
-              <Tooltip formatter={(v) => Number(v).toFixed(4)} />
+              <Tooltip formatter={(v) => formatMetric(Number(v))} />
               <Line dataKey="logN" name="Predicted curve" stroke="#166534" strokeWidth={2.4} dot={false} type="monotone" />
             </ComposedChart>
           </ResponsiveContainer>
