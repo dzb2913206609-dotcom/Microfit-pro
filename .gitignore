@@ -22,3 +22,25 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Build outputs
+src-tauri/target
+
+# Local backups and generated reports
+backups/
+reports/*
+!reports/*.md
+
+# Agent / tool state
+.agents/
+.claude/
+
+# Archives
+*.zip
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Keep the main manuscript out of the code repository
+docs/manuscript/*正文*

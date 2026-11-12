@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { MODELS } from '../src/models/inactivationModels.js';
+const reports = await import('../src/utils/primaryReport.js').catch(() => ({}));
+assert.equal(typeof reports.buildPrimaryFitReportRows, 'function');
+const dataset = {name:'Dose data',conditions:{custom_f2:3},data:[{t:2,logN:5}]};
+const result = {modelId:'LOG_LINEAR',params:{logN0:7,kmax:1},rmse:0.2,residualSE:0.3};
+const rows = reports.buildPrimaryFitReportRows(dataset,result,MODELS.LOG_LINEAR,[{key:'custom_f2',label:'Salinity',unit:'%'}], {axisUnit:'kGy',axisLabel:'Dose'});
+assert(rows.some(row => row[0]==='Basic Info' && row[1]==='Salinity (%)' && row[2]===3));
+assert(rows.some(row => row[0]==='Parameters' && row[1].includes('1/kGy')));
+assert(rows.some(row => row[0]==='Observed vs Predicted' && row[1]==='Dose (kGy)'));
+assert(rows.some(row => row[0]==='Statistics' && row[1]==='Residual standard error' && row[2]===0.3));
+console.log('Primary report regression checks passed.');

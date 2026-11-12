@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use MicroFit Pro, please cite the accompanying paper and this software record."
+title: "MicroFit Pro: A Web-Based Platform for Predictive Microbial Inactivation Modeling and Sensitivity Analysis Across Processing Technologies"
+version: "0.1.0"
+date-released: "2026-04-28"
+license: "MIT"
+type: software
+authors:
+  - name: "MicroFit Pro contributors"
+abstract: "MicroFit Pro is a browser-executed platform for microbial inactivation model fitting, secondary environmental modeling, dynamic simulation, uncertainty propagation, and sensitivity analysis across thermal and non-thermal processing technologies."
+keywords:
+  - microbial inactivation
+  - predictive microbiology
+  - secondary models
+  - uncertainty analysis
+  - sensitivity analysis

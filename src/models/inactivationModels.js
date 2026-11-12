@@ -6,17 +6,43 @@
  */
 
 function clampPositive(value, min = 1e-10) {
-  return Math.max(value, min);
+  // Unit conversion can make a valid positive rate arbitrarily small.
+  // Keep it exactly; the fallback applies only to nonpositive parameters.
+  return value > 0 ? value : Math.max(value, min);
 }
 
 function withPositiveMeta(param, meta = {}) {
   return { ...param, ...meta };
 }
 
+// Work in log space so small populations and large shoulders do not create
+// artificial survival floors, overflow, or Infinity / Infinity expressions.
+function logAddExp(a, b) {
+  if (a === -Infinity) return b;
+  if (b === -Infinity) return a;
+  const hi = Math.max(a, b);
+  return hi + Math.log1p(Math.exp(Math.min(a, b) - hi));
+}
+
+function logShoulderSurvival(kt, h) {
+  if (h === 0) return -kt;
+  const logOneMinusQ = Math.log(-Math.expm1(-h));
+  return -logAddExp(logOneMinusQ, kt - h);
+}
+
+function logPopulationWithResidual(logN0, logNres, logSurvival) {
+  if (!Number.isFinite(logN0) || !Number.isFinite(logNres) || logNres > logN0) return NaN;
+  if (logNres === logN0) return logN0;
+  const lnN0 = logN0 * Math.LN10;
+  const lnRes = logNres * Math.LN10;
+  const lnSensitive = lnN0 + Math.log(-Math.expm1(lnRes - lnN0));
+  return logAddExp(lnRes, lnSensitive + logSurvival) / Math.LN10;
+}
+
 export const MODELS = {
   LOG_LINEAR: {
     id: 'LOG_LINEAR',
-    name: 'Log-linear (Bigelow)',
+    name: 'Log-linear',
     shape: 'Shape I',
     description: 'Classic first-order kinetics; all cells equally sensitive.',
     secondaryTargets: ['kmax'],
@@ -24,7 +50,7 @@ export const MODELS = {
       withPositiveMeta({ name: 'logN0', label: 'log₁₀(N₀)', defaultValue: 7, description: 'Initial cell concentration (log scale)' }, { role: 'state' }),
       withPositiveMeta({ name: 'kmax', label: 'k_max (1/min)', defaultValue: 0.5, min: 0.001, description: 'First-order inactivation rate constant' }, { role: 'rate', positive: true }),
     ],
-    formula: 'log₁₀(N) = log₁₀(N₀) - k_max·t / ln(10)',
+    formula: '\\log_{10}(N) = \\log_{10}(N_0) - \\dfrac{k_{\\max}\\, t}{\\ln 10}',
     fn: (t, { logN0, kmax }) => logN0 - (clampPositive(kmax, 1e-6) * t) / Math.LN10,
   },
 
@@ -37,42 +63,37 @@ export const MODELS = {
     params: [
       withPositiveMeta({ name: 'logN0', label: 'log₁₀(N₀)', defaultValue: 7, description: 'Initial cell concentration (log scale)' }, { role: 'state' }),
       withPositiveMeta({ name: 'kmax', label: 'k_max (1/min)', defaultValue: 0.5, min: 0.001 }, { role: 'rate', positive: true }),
-      withPositiveMeta({ name: 'logNres', label: 'log₁₀(N_res)', defaultValue: 1, description: 'Residual resistant sub-population (log scale)' }, { role: 'residual' }),
+      withPositiveMeta({ name: 'logNres', label: 'log₁₀(N_res)', defaultValue: 1, min: -20, description: 'Residual resistant sub-population (log scale)' }, { role: 'residual' }),
     ],
-    formula: 'log₁₀(N) = log(e^(logN0·ln10) · e^(-kmax·t) + e^(logNres·ln10)) / ln(10)',
+    formula: '\\log_{10}(N) = \\log_{10}\\!\\left((N_0-N_{\\mathrm{res}})\\, e^{-k_{\\max} t} + N_{\\mathrm{res}}\\right)',
     fn: (t, { logN0, kmax, logNres }) => {
-      const N0 = Math.pow(10, logN0);
-      const Nres = Math.pow(10, logNres);
-      return Math.log10(clampPositive(N0 * Math.exp(-clampPositive(kmax, 1e-6) * t) + Nres));
+      return logPopulationWithResidual(logN0, logNres, -clampPositive(kmax, 1e-6) * t);
     },
   },
 
   SHOULDER_TAIL: {
     id: 'SHOULDER_TAIL',
-    name: 'Shoulder + Tail (Geeraerd)',
+    name: 'Shoulder + Tail',
     shape: 'Shape III',
     description: 'Sigmoidal curve with a shoulder lag and a tailing resistant sub-population.',
     secondaryTargets: ['kmax', 'Sl'],
     params: [
       withPositiveMeta({ name: 'logN0', label: 'log₁₀(N₀)', defaultValue: 7 }, { role: 'state' }),
       withPositiveMeta({ name: 'kmax', label: 'k_max (1/min)', defaultValue: 0.5, min: 0.001 }, { role: 'rate', positive: true }),
-      withPositiveMeta({ name: 'logNres', label: 'log₁₀(N_res)', defaultValue: 1 }, { role: 'residual' }),
+      withPositiveMeta({ name: 'logNres', label: 'log₁₀(N_res)', defaultValue: 1, min: -20 }, { role: 'residual' }),
       withPositiveMeta({ name: 'Sl', label: 'S_L (shoulder length, min)', defaultValue: 2, min: 0 }, { role: 'time', nonNegative: true }),
     ],
-    formula: 'Geeraerd et al. 2000: log(N) = log((N0-Nres)·e^(-kmax·t)·(1+Cc)/(1+Cc·e^(-kmax·t)) + Nres)',
+    formula: '\\log_{10}(N) = \\log_{10}\\!\\left((N_0-N_{\\mathrm{res}})\\,e^{-k_{\\max}t}\\,\\frac{1+C_c}{1+C_c\\,e^{-k_{\\max}t}}+N_{\\mathrm{res}}\\right)',
+    formulaNote: '\\text{where } C_c = e^{k_{\\max} S_L} - 1',
     fn: (t, { logN0, kmax, logNres, Sl }) => {
-      const N0 = Math.pow(10, logN0);
-      const Nres = Math.pow(10, logNres);
       const safeK = clampPositive(kmax, 1e-6);
-      const cc = Math.exp(safeK * Math.max(Sl, 0)) - 1;
-      const N = (N0 - Nres) * Math.exp(-safeK * t) * (1 + cc) / (1 + cc * Math.exp(-safeK * t)) + Nres;
-      return Math.log10(clampPositive(N));
+      return logPopulationWithResidual(logN0, logNres, logShoulderSurvival(safeK * t, safeK * Math.max(Sl, 0)));
     },
   },
 
   SHOULDER_NOTAIL: {
     id: 'SHOULDER_NOTAIL',
-    name: 'Linear + Shoulder (Geeraerd)',
+    name: 'Linear + Shoulder',
     shape: 'Shape IV',
     description: 'First-order kinetics with a shoulder lag; no tailing.',
     secondaryTargets: ['kmax', 'Sl'],
@@ -81,17 +102,17 @@ export const MODELS = {
       withPositiveMeta({ name: 'kmax', label: 'k_max (1/min)', defaultValue: 0.5, min: 0.001 }, { role: 'rate', positive: true }),
       withPositiveMeta({ name: 'Sl', label: 'S_L (shoulder length, min)', defaultValue: 2, min: 0 }, { role: 'time', nonNegative: true }),
     ],
-    formula: 'log₁₀(N) = logN0 - kmax/ln10 · [t + 1/kmax·ln((1+C_c·e^(-kmax·t))/(1+C_c))]',
+    formula: '\\log_{10}(N) = \\log_{10}(N_0) - \\dfrac{k_{\\max}}{\\ln 10}\\left[t + \\dfrac{1}{k_{\\max}}\\ln\\dfrac{1+C_c\\,e^{-k_{\\max}t}}{1+C_c}\\right]',
+    formulaNote: '\\text{where } C_c = e^{k_{\\max} S_L} - 1',
     fn: (t, { logN0, kmax, Sl }) => {
       const safeK = clampPositive(kmax, 1e-6);
-      const cc = Math.exp(safeK * Math.max(Sl, 0)) - 1;
-      return logN0 - (safeK / Math.LN10) * (t + (1 / safeK) * Math.log((1 + cc * Math.exp(-safeK * t)) / (1 + cc)));
+      return logN0 + logShoulderSurvival(safeK * t, safeK * Math.max(Sl, 0)) / Math.LN10;
     },
   },
 
   WEIBULL: {
     id: 'WEIBULL',
-    name: 'Weibull (Mafart / Peleg-Cole)',
+    name: 'Weibull',
     shape: 'Shape VI/VIII',
     description: 'Shape parameter p < 1 gives concave, p > 1 gives convex curvature.',
     secondaryTargets: ['delta', 'p'],
@@ -100,13 +121,13 @@ export const MODELS = {
       withPositiveMeta({ name: 'delta', label: 'δ (scale, min)', defaultValue: 5, min: 0.001, description: 'Characteristic time for 1-log reduction' }, { role: 'timeScale', positive: true }),
       withPositiveMeta({ name: 'p', label: 'p (shape)', defaultValue: 1, min: 0.01, description: 'p < 1 concave, p = 1 linear, p > 1 convex' }, { role: 'shape', positive: true }),
     ],
-    formula: 'log₁₀(N) = logN0 - (t/δ)^p',
-    fn: (t, { logN0, delta, p }) => logN0 - Math.pow(t / clampPositive(delta, 1e-6), clampPositive(p, 1e-6)),
+    formula: '\\log_{10}(N) = \\log_{10}(N_0) - \\left(\\dfrac{t}{\\delta}\\right)^{p}',
+    fn: (t, { logN0, delta, p }) => logN0 - Math.pow(Math.max(t, 0) / clampPositive(delta, 1e-6), clampPositive(p, 1e-6)),
   },
 
   WEIBULL_TAIL: {
     id: 'WEIBULL_TAIL',
-    name: 'Weibull + Tail (Albert & Mafart)',
+    name: 'Weibull + Tail',
     shape: 'Shape IX',
     description: 'Weibull model with a tailing resistant sub-population.',
     secondaryTargets: ['delta', 'p'],
@@ -114,19 +135,17 @@ export const MODELS = {
       withPositiveMeta({ name: 'logN0', label: 'log₁₀(N₀)', defaultValue: 7 }, { role: 'state' }),
       withPositiveMeta({ name: 'delta', label: 'δ (scale, min)', defaultValue: 5, min: 0.001 }, { role: 'timeScale', positive: true }),
       withPositiveMeta({ name: 'p', label: 'p (shape)', defaultValue: 1.5, min: 0.01 }, { role: 'shape', positive: true }),
-      withPositiveMeta({ name: 'logNres', label: 'log₁₀(N_res)', defaultValue: 1 }, { role: 'residual' }),
+      withPositiveMeta({ name: 'logNres', label: 'log₁₀(N_res)', defaultValue: 1, min: -20 }, { role: 'residual' }),
     ],
-    formula: 'log₁₀(N) = logNres + log(1 + (10^(logN0-logNres) - 1)·exp(-(t/δ)^p·ln10))',
+    formula: '\\log_{10}(N) = \\log_{10}(N_{\\mathrm{res}}) + \\log_{10}\\!\\left(1 + \\left(10^{\\log_{10}N_0 - \\log_{10}N_{\\mathrm{res}}}-1\\right)e^{-\\left(t/\\delta\\right)^p \\ln 10}\\right)',
     fn: (t, { logN0, delta, p, logNres }) => {
-      const N0 = Math.pow(10, logN0);
-      const Nres = Math.pow(10, logNres);
-      return Math.log10(clampPositive(Nres + (N0 - Nres) * Math.exp(-Math.pow(t / clampPositive(delta, 1e-6), clampPositive(p, 1e-6)) * Math.LN10)));
+      return logPopulationWithResidual(logN0, logNres, -Math.pow(Math.max(t, 0) / clampPositive(delta, 1e-6), clampPositive(p, 1e-6)) * Math.LN10);
     },
   },
 
   BIPHASIC: {
     id: 'BIPHASIC',
-    name: 'Biphasic (Cerf)',
+    name: 'Biphasic',
     shape: 'Shape V',
     description: 'Two sub-populations with different inactivation rates.',
     secondaryTargets: ['kmax1', 'kmax2'],
@@ -136,16 +155,16 @@ export const MODELS = {
       withPositiveMeta({ name: 'kmax2', label: 'k₂ (resistant, 1/min)', defaultValue: 0.1, min: 0.001 }, { role: 'rate', positive: true }),
       withPositiveMeta({ name: 'f', label: 'f (fraction sensitive, 0–1)', defaultValue: 0.9, min: 0.001, max: 0.999 }, { role: 'fraction', bounded: true }),
     ],
-    formula: 'log₁₀(N) = log₁₀(N₀·[f·e^(-k₁t) + (1-f)·e^(-k₂t)])',
+    formula: '\\log_{10}(N) = \\log_{10}\\!\\left(N_0\\left[f\\,e^{-k_1 t} + (1-f)\\,e^{-k_2 t}\\right]\\right)',
     fn: (t, { logN0, kmax1, kmax2, f }) => {
-      const N0 = Math.pow(10, logN0);
-      return Math.log10(clampPositive(N0 * (f * Math.exp(-clampPositive(kmax1, 1e-6) * t) + (1 - f) * Math.exp(-clampPositive(kmax2, 1e-6) * t))));
+      if (!(f >= 0 && f <= 1)) return NaN;
+      return logN0 + logAddExp(Math.log(f) - clampPositive(kmax1, 1e-6) * t, Math.log1p(-f) - clampPositive(kmax2, 1e-6) * t) / Math.LN10;
     },
   },
 
   BIPHASIC_SHOULDER: {
     id: 'BIPHASIC_SHOULDER',
-    name: 'Biphasic + Shoulder (Geeraerd)',
+    name: 'Biphasic + Shoulder',
     shape: 'Shape VII',
     description: 'Most complex shape: biphasic kinetics with a shoulder lag.',
     secondaryTargets: ['kmax1', 'kmax2', 'Sl'],
@@ -156,20 +175,18 @@ export const MODELS = {
       withPositiveMeta({ name: 'f', label: 'f (fraction sensitive)', defaultValue: 0.9, min: 0.001, max: 0.999 }, { role: 'fraction', bounded: true }),
       withPositiveMeta({ name: 'Sl', label: 'S_L (shoulder length, min)', defaultValue: 2, min: 0 }, { role: 'time', nonNegative: true }),
     ],
-    formula: 'Biphasic with Geeraerd shoulder correction',
+    formula: '\\log_{10}(N) = \\log_{10}\\!\\left(N_0\\left[f\\,e^{-k_1 t}\\,\\frac{1+C_c}{1+C_c\\,e^{-k_1 t}} + (1-f)\\,e^{-k_2 t}\\right]\\right)',
+    formulaNote: '\\text{where } C_c = e^{k_1 S_L} - 1',
     fn: (t, { logN0, kmax1, kmax2, f, Sl }) => {
-      const N0 = Math.pow(10, logN0);
       const safeK1 = clampPositive(kmax1, 1e-6);
-      const cc = Math.exp(safeK1 * Math.max(Sl, 0)) - 1;
-      const shoulderFactor = (1 + cc) / (1 + cc * Math.exp(-safeK1 * t));
-      const N = N0 * (f * Math.exp(-safeK1 * t) * shoulderFactor + (1 - f) * Math.exp(-clampPositive(kmax2, 1e-6) * t));
-      return Math.log10(clampPositive(N));
+      if (!(f >= 0 && f <= 1)) return NaN;
+      return logN0 + logAddExp(Math.log(f) + logShoulderSurvival(safeK1 * t, safeK1 * Math.max(Sl, 0)), Math.log1p(-f) - clampPositive(kmax2, 1e-6) * t) / Math.LN10;
     },
   },
 
   MIXED_WEIBULL: {
     id: 'MIXED_WEIBULL',
-    name: 'Mixed Weibull (Coroller)',
+    name: 'Mixed Weibull',
     shape: 'Shape X',
     description: 'Superposition of two Weibull distributions; double concave/convex.',
     secondaryTargets: ['delta1', 'p1', 'delta2', 'p2'],
@@ -181,12 +198,12 @@ export const MODELS = {
       withPositiveMeta({ name: 'p2', label: 'p₂', defaultValue: 0.5, min: 0.01 }, { role: 'shape', positive: true }),
       withPositiveMeta({ name: 'f', label: 'f (fraction of first sub-pop.)', defaultValue: 0.9, min: 0.001, max: 0.999 }, { role: 'fraction', bounded: true }),
     ],
-    formula: 'log₁₀(N) = log₁₀(N₀·[f·exp(-(t/δ₁)^p₁·ln10) + (1-f)·exp(-(t/δ₂)^p₂·ln10)])',
+    formula: '\\log_{10}(N) = \\log_{10}\\!\\left(N_0\\!\\left[f\\,\\exp\\!\\left(-\\left(\\tfrac{t}{\\delta_1}\\right)^{p_1}\\!\\ln 10\\right) + (1-f)\\,\\exp\\!\\left(-\\left(\\tfrac{t}{\\delta_2}\\right)^{p_2}\\!\\ln 10\\right)\\right]\\right)',
     fn: (t, { logN0, delta1, p1, delta2, p2, f }) => {
-      const N0 = Math.pow(10, logN0);
-      const part1 = f * Math.exp(-Math.pow(t / clampPositive(delta1, 1e-6), clampPositive(p1, 1e-6)) * Math.LN10);
-      const part2 = (1 - f) * Math.exp(-Math.pow(t / clampPositive(delta2, 1e-6), clampPositive(p2, 1e-6)) * Math.LN10);
-      return Math.log10(clampPositive(N0 * (part1 + part2)));
+      if (!(f >= 0 && f <= 1)) return NaN;
+      const part1 = Math.log(f) - Math.pow(Math.max(t, 0) / clampPositive(delta1, 1e-6), clampPositive(p1, 1e-6)) * Math.LN10;
+      const part2 = Math.log1p(-f) - Math.pow(Math.max(t, 0) / clampPositive(delta2, 1e-6), clampPositive(p2, 1e-6)) * Math.LN10;
+      return logN0 + logAddExp(part1, part2) / Math.LN10;
     },
   },
 
@@ -202,7 +219,7 @@ export const MODELS = {
       withPositiveMeta({ name: 'mu', label: 'μ (max inactivation rate)', defaultValue: 1, min: 0.001 }, { role: 'rate', positive: true }),
       withPositiveMeta({ name: 'lambda', label: 'λ (shoulder length, min)', defaultValue: 2, min: 0 }, { role: 'time', nonNegative: true }),
     ],
-    formula: 'log₁₀(N) = logN0 - A·exp(-exp(μ·e/A·(λ-t)+1))',
+    formula: '\\log_{10}(N) = \\log_{10}(N_0) - A\\,\\exp\\!\\left(-\\exp\\!\\left(\\frac{\\mu\\,e}{A}(\\lambda - t)+1\\right)\\right)',
     fn: (t, { logN0, A, mu, lambda }) => {
       const safeA = clampPositive(A, 1e-6);
       return logN0 - safeA * Math.exp(-Math.exp((clampPositive(mu, 1e-6) * Math.E) / safeA * (Math.max(lambda, 0) - t) + 1));
@@ -221,14 +238,11 @@ export const MODELS = {
       withPositiveMeta({ name: 'logNmin', label: 'log₁₀(N_min)', defaultValue: 0, description: 'Minimum survival concentration' }, { role: 'minimum' }),
       withPositiveMeta({ name: 'h0', label: 'h₀ (physiological state)', defaultValue: 1, min: 0 }, { role: 'stateModifier', nonNegative: true }),
     ],
-    formula: 'Baranyi inactivation with adjustment function',
+    formula: '\\log_{10}(N) = \\log_{10}\\!\\left(N_{\\min} + (N_0 - N_{\\min})\\, e^{-k_{\\max} A(t)}\\right), \\quad A(t) = t + \\frac{1}{k_{\\max}}\\ln\\!\\left(e^{-k_{\\max}t}+e^{-h_0}-e^{-k_{\\max}t-h_0}\\right)',
     fn: (t, { logN0, kmax, logNmin, h0 }) => {
       const safeK = clampPositive(kmax, 1e-6);
       const safeH0 = Math.max(h0, 0);
-      const A = t + (1 / safeK) * Math.log(Math.exp(-safeK * t) + Math.exp(-safeH0) - Math.exp(-safeK * t - safeH0));
-      const Nmin = Math.pow(10, logNmin);
-      const N0 = Math.pow(10, logN0);
-      return Math.log10(clampPositive(Nmin + (N0 - Nmin) * Math.exp(-safeK * A)));
+      return logPopulationWithResidual(logN0, logNmin, logShoulderSurvival(safeK * t, safeH0));
     },
   },
 };
@@ -245,4 +259,63 @@ export function predictCurve(modelId, params, tMax, nPoints = 200) {
     points.push({ t, logN: Number.isFinite(logN) ? logN : null });
   }
   return points;
+}
+
+/**
+ * Bisection solver: given a target log10(N), find the time t where model.fn(t, params) ≈ targetLogN.
+ * All inactivation models are monotonically decreasing, so bisection is reliable.
+ * Returns null if the target is outside the reachable range.
+ */
+export function solveForTime(modelId, targetLogN, params, tMax = 10000) {
+  const model = MODELS[modelId];
+  if (!model || !Number.isFinite(targetLogN) || !Number.isFinite(tMax) || tMax < 0) return null;
+
+  const fn = (t) => model.fn(t, params);
+  const logNat0 = fn(0);
+  const logNatMax = fn(tMax);
+
+  if (!Number.isFinite(logNat0) || !Number.isFinite(logNatMax)) return null;
+  if (targetLogN === logNat0) return 0;
+
+  // Rounded forward values can equal an asymptote at finite t, but the
+  // decreasing population reaches that limit only as t approaches infinity.
+  const floor = ['LOG_LINEAR_TAIL', 'WEIBULL_TAIL', 'SHOULDER_TAIL'].includes(modelId)
+    ? params.logNres
+    : modelId === 'BARANYI' ? params.logNmin
+    : modelId === 'GOMPERTZ' ? params.logN0 - clampPositive(params.A, 1e-6) : null;
+  if (Number.isFinite(floor) && targetLogN <= floor) return null;
+
+  // Model is decreasing: logNat0 >= logNatMax
+  const hi = Math.max(logNat0, logNatMax);
+  const lo = Math.min(logNat0, logNatMax);
+  if (targetLogN > hi || targetLogN < lo) return null;
+
+  let a = 0;
+  let b = tMax;
+  for (let i = 0; i < 100; i++) {
+    const mid = (a + b) / 2;
+    const val = fn(mid);
+    if (!Number.isFinite(val)) return null;
+    // Keep the first crossing bracket instead of accepting a flat rounded
+    // region based only on a small response error.
+    if (val > targetLogN) a = mid;
+    else b = mid;
+    if (b - a <= 1e-10 * Math.max(1, Math.abs(mid))) break;
+  }
+  return (a + b) / 2;
+}
+
+export function getParamsForDoseAxis(modelParams, doseUnit) {
+  return modelParams.map((p) => {
+    if (p.role === 'rate') {
+      return { ...p, label: p.label.replace(/1\/min/, `1/${doseUnit}`) };
+    }
+    if (p.role === 'timeScale') {
+      return { ...p, label: p.label.replace(/min\)/, `${doseUnit})`) };
+    }
+    if (p.role === 'time') {
+      return { ...p, label: p.label.replace(/min\)/, `${doseUnit})`) };
+    }
+    return p;
+  });
 }
