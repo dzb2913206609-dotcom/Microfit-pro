@@ -79,6 +79,9 @@ def condition_means(groups, product, temp, aw):
 
 def save(fig, name):
     fig.savefig(OUT / name)
+    stem = Path(name).stem
+    fig.savefig(OUT / f"{stem}.pdf")
+    fig.savefig(OUT / f"{stem}.svg")
     plt.close(fig)
 
 
