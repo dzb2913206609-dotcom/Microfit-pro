@@ -44,3 +44,6 @@ __pycache__/
 
 # Keep the main manuscript out of the code repository
 docs/manuscript/*正文*
+
+# Manuscript documents are kept locally only
+docs/manuscript/
