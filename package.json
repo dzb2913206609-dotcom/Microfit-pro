@@ -1,12 +1,14 @@
 {
   "name": "microbial-inactivation-app",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "test": "node --test scripts/test_*.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -14,10 +16,15 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
+    "html-to-image": "^1.11.13",
+    "katex": "^0.16.45",
     "lucide-react": "^1.7.0",
     "papaparse": "^5.5.3",
+    "plotly.js-dist-min": "^3.5.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-katex": "^3.1.0",
+    "react-plotly.js": "^2.6.0",
     "recharts": "^3.8.1"
   },
   "devDependencies": {

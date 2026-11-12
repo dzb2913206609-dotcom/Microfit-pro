@@ -1,6 +1,11 @@
 import { getModelList, MODELS } from '../models/inactivationModels';
+import { FormattedLabel } from '../utils/formatLabels.jsx';
 
 const ALL_MODELS = getModelList();
+
+function stripModelName(name) {
+  return (name ?? '').replace(/\s*\(.*\)\s*$/, '').trim();
+}
 
 export default function ModelSelector({
   selectedModels, setSelectedModels,
@@ -82,9 +87,9 @@ export default function ModelSelector({
                 onChange={() => toggleModel(modelId)}
                 className="mvp-checkbox"
               />
-              <span className="mvp-name">{model?.name ?? modelId}</span>
+              <span className="mvp-name">{stripModelName(model?.name ?? modelId)}</span>
               {aiccStr && (
-                <span className="mvp-aicc">AICc {aiccStr}</span>
+                <span className="mvp-aicc"><FormattedLabel text="AICc" /> {aiccStr}</span>
               )}
             </li>
           );

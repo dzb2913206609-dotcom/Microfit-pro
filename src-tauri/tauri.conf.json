@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "",
+    "beforeDevCommand": "npm run dev -- --host 127.0.0.1 --port 1420 --strictPort",
     "beforeBuildCommand": "npm run build"
   },
   "app": {

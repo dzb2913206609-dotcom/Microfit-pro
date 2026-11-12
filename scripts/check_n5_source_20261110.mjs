@@ -1,0 +1,11 @@
+import fs from 'node:fs';
+import { getExampleCase } from '../src/config/exampleDatasets.js';
+import { fitPrimaryInTimeUnit } from '../src/utils/unitFitting.js';
+const dir = 'reports/n5_source_correction_20261110';
+fs.mkdirSync(dir,{recursive:true});
+const corrected=getExampleCase('paper-n5-primary-time-us').datasets.find(d=>d.id==='n5_sa').data;
+const old=[[15.7,5.3],[30.2,4.5],[76.1,3.8],[151.1,3.6],[300,3.3],[500.4,2.9]].map(([t,logN])=>({t,logN}));
+const cases={corrected,previousIncorrect:old,correctedWithoutZero:corrected.filter(r=>r.t!==0)};
+const output=Object.fromEntries(Object.entries(cases).map(([name,data])=>[name,{data,fit:fitPrimaryInTimeUnit('WEIBULL',data,{timeUnitToMin:1/60000000})}]));
+fs.writeFileSync(dir+'/n5_refits.json',JSON.stringify(output,null,2));
+for(const [name,{fit:f}] of Object.entries(output))console.log(name,JSON.stringify({n:f.n,params:f.params,se:f.paramErrors,rmse:f.rmse,bounds:f.boundaryWarnings}));
